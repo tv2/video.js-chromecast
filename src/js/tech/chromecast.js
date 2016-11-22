@@ -238,6 +238,8 @@ class Chromecast extends Tech {
       return chrome.cast.media.IdleReason === "FINISHED";
     }
 
+    load () {}
+
     currentTime () {
         if (!this.apiMedia) {
             return 0;

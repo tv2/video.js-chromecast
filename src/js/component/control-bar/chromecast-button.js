@@ -2,6 +2,7 @@
  * @file chromecast-button.js
  */
 import videojs from 'video.js';
+import loadMedia from '../chromecast/load.js';
 
 const Component = videojs.getComponent('Component');
 const ControlBar = videojs.getComponent('ControlBar');
@@ -59,11 +60,11 @@ class ChromeCastButton extends Button {
         appId = this.options_.appId || chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID;
         sessionRequest = new chrome.cast.SessionRequest(appId);
         apiConfig = new chrome.cast.ApiConfig(sessionRequest, ::this.sessionJoinedListener, ::this.receiverListener);
+
         return chrome.cast.initialize(apiConfig, ::this.onInitSuccess, ::this.castError);
     }
 
     castError (castError) {
-
         let error = {
             code: castError.code,
             message: castError.description
@@ -118,97 +119,17 @@ class ChromeCastButton extends Button {
     }
 
     onSessionSuccess (session) {
-        let image;
-        let key;
-        let loadRequest;
-        let mediaInfo;
-        let ref;
-        let value;
+      this.apiSession = session;
+      this.player_.pause(); //Pause the current playing content until cast has loaded
 
+      //TODO: Did I remove too much? :O
+      const loadRequest = new loadMedia(
+        this.player_.cache_.src, this.player_.currentType()
+      );
 
-        this.apiSession = session;
-        const source = this.player_.cache_.src;
-        const type = this.player_.currentType();
-
-        videojs.log('Session initialized: ' + session.sessionId + ' source : ' + source + ' type : ' + type);
-
-        mediaInfo = new chrome.cast.media.MediaInfo(source, type);
-        mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
-        if (this.options_.metadata) {
-            ref = this.options_.metadata;
-            for (key in ref) {
-                value = ref[key];
-                mediaInfo.metadata[key] = value;
-            }
-
-        }
-        //Add poster image on player
-        const poster = this.player().poster();
-        if (poster) {
-            image = new chrome.cast.Image(poster);
-            mediaInfo.metadata.images = [image];
-        }
-
-        // Load/Add caption tracks
-        let plTracks = this.player().textTracks();
-        const remotePlTracks = this.player().remoteTextTrackEls();
-        let tracks = [];
-        let i = 0;
-        let remotePlTrack;
-        let plTrack;
-        let trackId = 0;
-        let track;
-        if (plTracks) {
-            for (i = 0; i < plTracks.length; i++) {
-                plTrack = plTracks.tracks_[i];
-                remotePlTrack = remotePlTracks && remotePlTracks.trackElements_ && remotePlTracks.trackElements_[i];
-                trackId++;
-                track = new chrome.cast.media.Track(trackId, chrome.cast.media.TrackType.TEXT);
-                track.trackContentId = remotePlTrack ? remotePlTrack.src : 'caption_' + plTrack.language;
-                track.subtype = chrome.cast.media.TextTrackType.CAPTIONS;
-                track.name = plTrack.label;
-                track.language = plTrack.language;
-                track.customData = null;
-                tracks.push(track);
-            }
-            mediaInfo.textTrackStyle = new chrome.cast.media.TextTrackStyle();
-            mediaInfo.textTrackStyle.foregroundColor = '#FFFFFF';
-            mediaInfo.textTrackStyle.backgroundColor = '#00000060';
-            mediaInfo.textTrackStyle.edgeType = chrome.cast.media.TextTrackEdgeType.DROP_SHADOW;
-            mediaInfo.textTrackStyle.windowType = chrome.cast.media.TextTrackWindowType.ROUNDED_CORNERS;
-        }
-        // Load/Add audio tracks
-
-        try {
-            plTracks = this.player().audioTracks();
-            if (plTracks) {
-                for (i = 0; i < plTracks.length; i++) {
-                    plTrack = plTracks.tracks_[i];
-                    trackId++;
-                    track = new chrome.cast.media.Track(trackId, chrome.cast.media.TrackType.AUDIO);
-                    track.subtype = null;
-                    track.name = plTrack.label;
-                    track.language = plTrack.language;
-                    track.customData = null;
-                    tracks.push(track);
-                }
-            }
-        } catch (e) {
-            videojs.log('get player audioTracks fail' + e);
-        }
-
-        if (tracks.length) {
-            mediaInfo.tracks = tracks;
-        }
-
-        // Request load media source
-        loadRequest = new chrome.cast.media.LoadRequest(mediaInfo);
-
-        loadRequest.autoplay = true;
-        loadRequest.currentTime = this.player_.currentTime();
-
-        this.apiSession.loadMedia(loadRequest, ::this.onMediaDiscovered, ::this.castError);
-        this.apiSession.addUpdateListener(::this.onSessionUpdate);
+      loadRequest.setCurrentTime(this.player_.currentTime());
+      this.apiSession.loadMedia(loadRequest.request(), ::this.onMediaDiscovered, ::this.castError);
+      this.apiSession.addUpdateListener(::this.onSessionUpdate);
     }
 
     onMediaDiscovered (media) {
